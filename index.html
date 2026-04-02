@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家族カレンダー</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Noto Sans JP',sans-serif;background:#f5f4f0;min-height:100vh;color:#1a1a1a}
+#app{max-width:960px;margin:0 auto;padding:1rem}
+h1{font-size:20px;font-weight:600;text-align:center;padding:1rem 0 0.5rem;color:#1a1a1a;letter-spacing:0.05em}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;gap:8px;flex-wrap:wrap;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.07)}
+.month-nav{display:flex;align-items:center;gap:10px}
+.nav-btn{background:none;border:1px solid #ddd;border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px;color:#333;display:flex;align-items:center;justify-content:center;transition:background 0.15s}
+.nav-btn:hover{background:#f0f0f0}
+.month-title{font-size:17px;font-weight:600;min-width:120px;text-align:center}
+.members-bar{display:flex;gap:5px;flex-wrap:wrap}
+.member-chip{font-size:12px;padding:4px 10px;border-radius:20px;cursor:pointer;border:1.5px solid transparent;transition:opacity 0.15s;font-weight:500;user-select:none}
+.member-chip.inactive{opacity:0.3}
+.add-btn{border:1px solid #ddd;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer;background:#1a1a1a;color:#fff;white-space:nowrap;font-weight:500;transition:background 0.15s}
+.add-btn:hover{background:#333}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e0ddd8;border:1px solid #e0ddd8;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.07)}
+.dow{background:#f9f8f5;padding:8px 4px;text-align:center;font-size:11px;color:#888;font-weight:600;letter-spacing:0.05em}
+.dow:first-child{color:#e24b4a}
+.dow:last-child{color:#378add}
+.day-cell{background:#fff;min-height:88px;padding:4px;cursor:pointer;transition:background 0.1s}
+.day-cell:hover{background:#fafaf8}
+.day-cell.other-month{background:#faf9f6}
+.day-cell.other-month .day-num{color:#bbb}
+.day-cell.sunday .day-num{color:#e24b4a}
+.day-cell.saturday .day-num{color:#378add}
+.day-num{font-size:12px;font-weight:600;margin-bottom:3px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%}
+.day-num.today-num{background:#1a1a1a;color:#fff}
+.event-pill{font-size:10px;padding:2px 6px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:500}
+.more-label{font-size:10px;color:#aaa;padding:1px 4px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:flex-end;justify-content:center;z-index:100}
+@media(min-width:600px){.modal-overlay{align-items:center}}
+.modal{background:#fff;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:420px}
+@media(min-width:600px){.modal{border-radius:16px}}
+.modal-handle{width:40px;height:4px;background:#e0e0e0;border-radius:2px;margin:0 auto 1.2rem}
+.modal h2{font-size:16px;font-weight:600;margin-bottom:1rem}
+.form-row{margin-bottom:0.8rem}
+.form-row label{display:block;font-size:11px;color:#888;margin-bottom:4px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase}
+.form-row input,.form-row select{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-size:15px;background:#fff;color:#1a1a1a;-webkit-appearance:none;appearance:none}
+.form-row input:focus,.form-row select:focus{outline:none;border-color:#1a1a1a}
+.btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:1.2rem}
+.btn{padding:9px 18px;border-radius:8px;font-size:14px;cursor:pointer;border:1px solid #ddd;font-weight:500}
+.btn-primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.btn-primary:hover{background:#333}
+.btn-danger{color:#e24b4a;background:none;border-color:#e24b4a}
+.btn-cancel{background:none;color:#888}
+.repeat-note{font-size:11px;color:#aaa;margin-top:4px}
+.sync-bar{text-align:center;font-size:11px;color:#aaa;padding:8px 0 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>&#128197; 家族カレンダー</h1>
+  <div class="top-bar">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth(-1)">&#8249;</button>
+      <div class="month-title" id="month-title"></div>
+      <button class="nav-btn" onclick="changeMonth(1)">&#8250;</button>
+    </div>
+    <div class="members-bar" id="members-bar"></div>
+    <button class="add-btn" onclick="openAdd()">+ 予定追加</button>
+  </div>
+  <div class="cal-grid" id="cal-grid"></div>
+  <div class="sync-bar" id="sync-bar">読み込み中...</div>
+</div>
+
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h2 id="modal-title">予定を追加</h2>
+    <div class="form-row">
+      <label>タイトル</label>
+      <input id="f-title" type="text" placeholder="例：歯医者、習い事">
+    </div>
+    <div class="form-row">
+      <label>日付</label>
+      <input id="f-date" type="date">
+    </div>
+    <div class="form-row">
+      <label>メンバー</label>
+      <select id="f-member"></select>
+    </div>
+    <div class="form-row">
+      <label>繰り返し</label>
+      <select id="f-repeat">
+        <option value="none">なし</option>
+        <option value="weekly">毎週（同じ曜日）</option>
+        <option value="monthly">毎月（同じ日）</option>
+      </select>
+      <div class="repeat-note" id="repeat-note" style="display:none"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-danger" id="btn-delete" style="display:none" onclick="deleteEvent()">削除</button>
+      <button class="btn btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveEvent()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── データはFirebase Realtime Database (無料) または localStorage にフォールバック
+// GitHub Pagesで使う場合: Firebase設定を入れると全端末でリアルタイム共有できます
+// 設定なしの場合: 端末内ローカル保存になります
+
+const FIREBASE_CONFIG = null;
+// ↑ Firebaseを使う場合はここに設定オブジェクトを入れる
+// 例: const FIREBASE_CONFIG = {
+//   databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+// };
+
+const LS_KEY = 'family_cal_v2';
+
+const MEMBERS = [
+  {id:'m1', name:'パパ',  color:'#378ADD'},
+  {id:'m2', name:'ママ',  color:'#D4537E'},
+  {id:'m3', name:'マナ',  color:'#1D9E75'},
+  {id:'m4', name:'ユウト',color:'#EF9F27'},
+  {id:'m5', name:'ケント',color:'#7F77DD'},
+];
+
+let state = {
+  year: new Date().getFullYear(),
+  month: new Date().getMonth(),
+  hiddenMembers: new Set(),
+  events: [],
+  editingId: null,
+};
+
+// ── ストレージ（localStorageのみ・シンプル実装）
+function loadEvents() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) state.events = JSON.parse(raw);
+  } catch(e) {}
+  render();
+  document.getElementById('sync-bar').textContent =
+    '※ このデバイス内に保存中。家族と共有するにはFirebase設定が必要です。';
+}
+
+function persistEvents() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state.events));
+  } catch(e) {}
+}
+
+// ── ナビ
+function changeMonth(d) {
+  state.month += d;
+  if (state.month > 11) { state.month = 0; state.year++; }
+  if (state.month < 0)  { state.month = 11; state.year--; }
+  render();
+}
+
+// ── レンダリング
+function render() {
+  renderTitle();
+  renderMembers();
+  renderGrid();
+}
+
+function renderTitle() {
+  document.getElementById('month-title').textContent =
+    `${state.year}年${state.month+1}月`;
+}
+
+function renderMembers() {
+  document.getElementById('members-bar').innerHTML = MEMBERS.map(m => {
+    const on = !state.hiddenMembers.has(m.id);
+    return `<div class="member-chip ${on?'':'inactive'}"
+      style="background:${m.color}20;color:${m.color};border-color:${m.color}"
+      onclick="toggleMember('${m.id}')">${m.name}</div>`;
+  }).join('');
+}
+
+function toggleMember(id) {
+  state.hiddenMembers.has(id) ? state.hiddenMembers.delete(id) : state.hiddenMembers.add(id);
+  renderGrid(); renderMembers();
+}
+
+function fmt(y,m,d){
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function getEventsForDate(ds) {
+  return state.events.filter(e => {
+    if (state.hiddenMembers.has(e.memberId)) return false;
+    if (!e.repeat || e.repeat === 'none') return e.date === ds;
+    const ev = new Date(e.date+'T00:00:00');
+    const cell = new Date(ds+'T00:00:00');
+    if (cell < ev) return false;
+    if (e.repeat === 'weekly')  return ev.getDay() === cell.getDay();
+    if (e.repeat === 'monthly') return ev.getDate() === cell.getDate();
+    return false;
+  });
+}
+
+function renderGrid() {
+  const grid = document.getElementById('cal-grid');
+  const dows = ['日','月','火','水','木','金','土'];
+  let html = dows.map(d=>`<div class="dow">${d}</div>`).join('');
+
+  const first = new Date(state.year, state.month, 1);
+  const last  = new Date(state.year, state.month+1, 0);
+  const startDow = first.getDay();
+  const today = new Date();
+  const todayStr = fmt(today.getFullYear(), today.getMonth()+1, today.getDate());
+
+  function cell(dateObj, ds, other) {
+    const dow = dateObj.getDay();
+    const evs = getEventsForDate(ds);
+    const isToday = ds === todayStr;
+    const cls = [other?'other-month':'', dow===0?'sunday':'', dow===6?'saturday':''].filter(Boolean).join(' ');
+    const numCls = isToday ? 'day-num today-num' : 'day-num';
+    let pills = evs.slice(0,3).map(e => {
+      const m = MEMBERS.find(x=>x.id===e.memberId);
+      const col = m ? m.color : '#888';
+      return `<div class="event-pill" style="background:${col}20;color:${col}" onclick="openEdit('${e.id}',event)">${m?m.name[0]+' ':''} ${e.title}</div>`;
+    }).join('');
+    if (evs.length > 3) pills += `<div class="more-label">他${evs.length-3}件</div>`;
+    return `<div class="day-cell ${cls}" onclick="onDayClick('${ds}')"><div class="${numCls}">${dateObj.getDate()}</div>${pills}</div>`;
+  }
+
+  for (let i=0; i<startDow; i++) {
+    const d = new Date(state.year, state.month, 1-(startDow-i));
+    html += cell(d, fmt(d.getFullYear(),d.getMonth()+1,d.getDate()), true);
+  }
+  for (let d=1; d<=last.getDate(); d++) {
+    const dateObj = new Date(state.year, state.month, d);
+    html += cell(dateObj, fmt(state.year, state.month+1, d), false);
+  }
+  const rem = 42 - startDow - last.getDate();
+  for (let i=1; i<=rem; i++) {
+    const d = new Date(state.year, state.month+1, i);
+    html += cell(d, fmt(d.getFullYear(),d.getMonth()+1,d.getDate()), true);
+  }
+  grid.innerHTML = html;
+}
+
+// ── モーダル
+function onDayClick(ds) { openAdd(ds); }
+
+function openAdd(dateStr) {
+  state.editingId = null;
+  document.getElementById('modal-title').textContent = '予定を追加';
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-date').value = dateStr || fmt(state.year, state.month+1, new Date().getDate());
+  document.getElementById('f-repeat').value = 'none';
+  document.getElementById('btn-delete').style.display = 'none';
+  document.getElementById('repeat-note').style.display = 'none';
+  populateMember();
+  document.getElementById('modal').style.display = 'flex';
+  setTimeout(()=>document.getElementById('f-title').focus(), 60);
+}
+
+function openEdit(id, e) {
+  e && e.stopPropagation();
+  const ev = state.events.find(x=>x.id===id);
+  if (!ev) return;
+  state.editingId = id;
+  document.getElementById('modal-title').textContent = '予定を編集';
+  document.getElementById('f-title').value = ev.title;
+  document.getElementById('f-date').value = ev.date;
+  document.getElementById('f-repeat').value = ev.repeat || 'none';
+  document.getElementById('btn-delete').style.display = 'inline-block';
+  populateMember(ev.memberId);
+  document.getElementById('modal').style.display = 'flex';
+  updateRepeatNote();
+}
+
+function populateMember(sel) {
+  document.getElementById('f-member').innerHTML = MEMBERS.map(m=>
+    `<option value="${m.id}" ${m.id===(sel||MEMBERS[0].id)?'selected':''}>${m.name}</option>`
+  ).join('');
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+function saveEvent() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { document.getElementById('f-title').focus(); return; }
+  const date = document.getElementById('f-date').value;
+  const memberId = document.getElementById('f-member').value;
+  const repeat = document.getElementById('f-repeat').value;
+  if (state.editingId) {
+    const ev = state.events.find(x=>x.id===state.editingId);
+    if (ev) Object.assign(ev, {title,date,memberId,repeat});
+  } else {
+    state.events.push({id:'e'+Date.now(), title, date, memberId, repeat});
+  }
+  persistEvents();
+  closeModal();
+  renderGrid();
+}
+
+function deleteEvent() {
+  if (!state.editingId) return;
+  if (!confirm('この予定を削除しますか？')) return;
+  state.events = state.events.filter(x=>x.id!==state.editingId);
+  persistEvents();
+  closeModal();
+  renderGrid();
+}
+
+function updateRepeatNote() {
+  const v = document.getElementById('f-repeat').value;
+  const el = document.getElementById('repeat-note');
+  if (v==='weekly')  { el.style.display='block'; el.textContent='毎週同じ曜日に繰り返します'; }
+  else if (v==='monthly') { el.style.display='block'; el.textContent='毎月同じ日に繰り返します'; }
+  else el.style.display='none';
+}
+document.getElementById('f-repeat').addEventListener('change', updateRepeatNote);
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target===document.getElementById('modal')) closeModal();
+});
+
+loadEvents();
+</script>
+</body>
+</html>
