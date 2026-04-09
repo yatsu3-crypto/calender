@@ -51,7 +51,9 @@ h1{font-size:20px;font-weight:600;text-align:center;padding:1rem 0 0.5rem;color:
 .btn-danger{color:#e24b4a;background:none;border-color:#e24b4a}
 .btn-cancel{background:none;color:#888}
 .repeat-note{font-size:11px;color:#aaa;margin-top:4px}
-.sync-bar{text-align:center;font-size:11px;color:#aaa;padding:8px 0 0}
+.sync-bar{text-align:center;font-size:11px;color:#aaa;padding:8px 0 4px}
+.sync-bar.ok{color:#1D9E75}
+.sync-bar.err{color:#e24b4a}
 </style>
 </head>
 <body>
@@ -67,7 +69,7 @@ h1{font-size:20px;font-weight:600;text-align:center;padding:1rem 0 0.5rem;color:
     <button class="add-btn" onclick="openAdd()">+ 予定追加</button>
   </div>
   <div class="cal-wrap"><div class="cal-grid" id="cal-grid"></div></div>
-  <div class="sync-bar" id="sync-bar">読み込み中...</div>
+  <div class="sync-bar" id="sync-bar">接続中...</div>
 </div>
 
 <div class="modal-overlay" id="modal" style="display:none">
@@ -103,18 +105,15 @@ h1{font-size:20px;font-weight:600;text-align:center;padding:1rem 0 0.5rem;color:
   </div>
 </div>
 
-<script>
-// ── データはFirebase Realtime Database (無料) または localStorage にフォールバック
-// GitHub Pagesで使う場合: Firebase設定を入れると全端末でリアルタイム共有できます
-// 設定なしの場合: 端末内ローカル保存になります
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, onValue, set } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
-const FIREBASE_CONFIG = null;
-// ↑ Firebaseを使う場合はここに設定オブジェクトを入れる
-// 例: const FIREBASE_CONFIG = {
-//   databaseURL: "https://your-project-default-rtdb.firebaseio.com",
-// };
-
-const LS_KEY = 'family_cal_v2';
+const app = initializeApp({
+  databaseURL: 'https://family-calendar-3d38c-default-rtdb.asia-southeast1.firebasedatabase.app'
+});
+const db = getDatabase(app);
+const eventsRef = ref(db, 'events');
 
 const MEMBERS = [
   {id:'m1', name:'パパ',  color:'#378ADD'},
@@ -124,7 +123,7 @@ const MEMBERS = [
   {id:'m5', name:'ケント',color:'#7F77DD'},
 ];
 
-let state = {
+const state = {
   year: new Date().getFullYear(),
   month: new Date().getMonth(),
   hiddenMembers: new Set(),
@@ -132,58 +131,52 @@ let state = {
   editingId: null,
 };
 
-// ── ストレージ（localStorageのみ・シンプル実装）
-function loadEvents() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (raw) state.events = JSON.parse(raw);
-  } catch(e) {}
-  render();
-  document.getElementById('sync-bar').textContent =
-    '※ このデバイス内に保存中。家族と共有するにはFirebase設定が必要です。';
+function syncBar(msg, cls) {
+  const el = document.getElementById('sync-bar');
+  el.textContent = msg;
+  el.className = 'sync-bar' + (cls ? ' '+cls : '');
 }
+
+// Firebase リアルタイム同期
+onValue(eventsRef, (snapshot) => {
+  const data = snapshot.val();
+  state.events = data ? Object.values(data) : [];
+  render();
+  syncBar('✓ 家族全員とリアルタイム共有中', 'ok');
+}, (err) => {
+  syncBar('⚠️ 接続エラー: ' + err.message, 'err');
+});
 
 function persistEvents() {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(state.events));
-  } catch(e) {}
+  const obj = {};
+  state.events.forEach(e => { obj[e.id] = e; });
+  set(eventsRef, obj).catch(err => alert('保存エラー: ' + err.message));
 }
 
-// ── ナビ
-function changeMonth(d) {
+window.changeMonth = function(d) {
   state.month += d;
   if (state.month > 11) { state.month = 0; state.year++; }
   if (state.month < 0)  { state.month = 11; state.year--; }
   render();
-}
+};
 
-// ── レンダリング
 function render() {
-  renderTitle();
-  renderMembers();
-  renderGrid();
-}
-
-function renderTitle() {
-  document.getElementById('month-title').textContent =
-    `${state.year}年${state.month+1}月`;
-}
-
-function renderMembers() {
+  document.getElementById('month-title').textContent = `${state.year}年${state.month+1}月`;
   document.getElementById('members-bar').innerHTML = MEMBERS.map(m => {
     const on = !state.hiddenMembers.has(m.id);
     return `<div class="member-chip ${on?'':'inactive'}"
       style="background:${m.color}20;color:${m.color};border-color:${m.color}"
       onclick="toggleMember('${m.id}')">${m.name}</div>`;
   }).join('');
+  renderGrid();
 }
 
-function toggleMember(id) {
+window.toggleMember = function(id) {
   state.hiddenMembers.has(id) ? state.hiddenMembers.delete(id) : state.hiddenMembers.add(id);
-  renderGrid(); renderMembers();
-}
+  render();
+};
 
-function fmt(y,m,d){
+function fmt(y,m,d) {
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
 
@@ -204,7 +197,6 @@ function renderGrid() {
   const grid = document.getElementById('cal-grid');
   const dows = ['日','月','火','水','木','金','土'];
   let html = dows.map(d=>`<div class="dow">${d}</div>`).join('');
-
   const first = new Date(state.year, state.month, 1);
   const last  = new Date(state.year, state.month+1, 0);
   const startDow = first.getDay();
@@ -220,7 +212,7 @@ function renderGrid() {
     let pills = evs.slice(0,3).map(e => {
       const m = MEMBERS.find(x=>x.id===e.memberId);
       const col = m ? m.color : '#888';
-      return `<div class="event-pill" style="background:${col}20;color:${col}" onclick="openEdit('${e.id}',event)">${m?m.name[0]+' ':''} ${e.title}</div>`;
+      return `<div class="event-pill" style="background:${col}20;color:${col}" onclick="openEdit('${e.id}',event)">${m?m.name[0]+' ':''}${e.title}</div>`;
     }).join('');
     if (evs.length > 3) pills += `<div class="more-label">他${evs.length-3}件</div>`;
     return `<div class="day-cell ${cls}" onclick="onDayClick('${ds}')"><div class="${numCls}">${dateObj.getDate()}</div>${pills}</div>`;
@@ -231,8 +223,7 @@ function renderGrid() {
     html += cell(d, fmt(d.getFullYear(),d.getMonth()+1,d.getDate()), true);
   }
   for (let d=1; d<=last.getDate(); d++) {
-    const dateObj = new Date(state.year, state.month, d);
-    html += cell(dateObj, fmt(state.year, state.month+1, d), false);
+    html += cell(new Date(state.year,state.month,d), fmt(state.year,state.month+1,d), false);
   }
   const rem = 42 - startDow - last.getDate();
   for (let i=1; i<=rem; i++) {
@@ -242,14 +233,13 @@ function renderGrid() {
   grid.innerHTML = html;
 }
 
-// ── モーダル
-function onDayClick(ds) { openAdd(ds); }
+window.onDayClick = function(ds) { openAdd(ds); };
 
 function openAdd(dateStr) {
   state.editingId = null;
   document.getElementById('modal-title').textContent = '予定を追加';
   document.getElementById('f-title').value = '';
-  document.getElementById('f-date').value = dateStr || fmt(state.year, state.month+1, new Date().getDate());
+  document.getElementById('f-date').value = dateStr || fmt(state.year,state.month+1,new Date().getDate());
   document.getElementById('f-repeat').value = 'none';
   document.getElementById('btn-delete').style.display = 'none';
   document.getElementById('repeat-note').style.display = 'none';
@@ -257,8 +247,9 @@ function openAdd(dateStr) {
   document.getElementById('modal').style.display = 'flex';
   setTimeout(()=>document.getElementById('f-title').focus(), 60);
 }
+window.openAdd = openAdd;
 
-function openEdit(id, e) {
+window.openEdit = function(id, e) {
   e && e.stopPropagation();
   const ev = state.events.find(x=>x.id===id);
   if (!ev) return;
@@ -271,7 +262,7 @@ function openEdit(id, e) {
   populateMember(ev.memberId);
   document.getElementById('modal').style.display = 'flex';
   updateRepeatNote();
-}
+};
 
 function populateMember(sel) {
   document.getElementById('f-member').innerHTML = MEMBERS.map(m=>
@@ -279,11 +270,11 @@ function populateMember(sel) {
   ).join('');
 }
 
-function closeModal() {
+window.closeModal = function() {
   document.getElementById('modal').style.display = 'none';
-}
+};
 
-function saveEvent() {
+window.saveEvent = function() {
   const title = document.getElementById('f-title').value.trim();
   if (!title) { document.getElementById('f-title').focus(); return; }
   const date = document.getElementById('f-date').value;
@@ -297,22 +288,20 @@ function saveEvent() {
   }
   persistEvents();
   closeModal();
-  renderGrid();
-}
+};
 
-function deleteEvent() {
+window.deleteEvent = function() {
   if (!state.editingId) return;
   if (!confirm('この予定を削除しますか？')) return;
   state.events = state.events.filter(x=>x.id!==state.editingId);
   persistEvents();
   closeModal();
-  renderGrid();
-}
+};
 
 function updateRepeatNote() {
   const v = document.getElementById('f-repeat').value;
   const el = document.getElementById('repeat-note');
-  if (v==='weekly')  { el.style.display='block'; el.textContent='毎週同じ曜日に繰り返します'; }
+  if (v==='weekly')       { el.style.display='block'; el.textContent='毎週同じ曜日に繰り返します'; }
   else if (v==='monthly') { el.style.display='block'; el.textContent='毎月同じ日に繰り返します'; }
   else el.style.display='none';
 }
@@ -320,8 +309,6 @@ document.getElementById('f-repeat').addEventListener('change', updateRepeatNote)
 document.getElementById('modal').addEventListener('click', e => {
   if (e.target===document.getElementById('modal')) closeModal();
 });
-
-loadEvents();
 </script>
 </body>
 </html>
